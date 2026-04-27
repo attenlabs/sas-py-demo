@@ -162,14 +162,13 @@ def main() -> int:
     if enable_audio:
         sd.default.device[0] = mic_device
 
-    # Token fallback for production server
-    token = args.token
-    if not token:
-        token = "480daed2-8b70-42b1-a1aa-1a7832b42884"
+    if not args.token:
+        print("Error: --token is required (or set SAS_TOKEN env var).")
+        return 1
 
     client = AttentionClient(
         url=args.url,
-        token=token,
+        token=args.token,
         video=CameraConfig(device_index=cam_index if cam_index is not None else 0),
         audio=MicConfig(device=mic_device),
         initial_threshold=args.threshold,
