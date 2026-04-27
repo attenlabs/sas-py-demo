@@ -13,6 +13,8 @@ import os
 import sys
 import time
 
+import sounddevice as sd
+
 from sas import AttentionClient, CameraConfig, MicConfig
 
 from llm import RealtimeLLMBridge
@@ -25,14 +27,90 @@ LLM_INSTRUCTIONS = (
 )
 
 
+# ── Device selection ────────────────────────────────────────────
+
+
+def _list_microphones() -> list[dict]:
+    """Return list of input audio devices."""
+    devices = sd.query_devices()
+    inputs = []
+    for i, d in enumerate(devices):
+        if d["max_input_channels"] > 0:
+            inputs.append({"index": i, "name": d["name"],
+                           "channels": d["max_input_channels"],
+                           "rate": d["default_samplerate"]})
+    return inputs
+
+
+def _list_cameras() -> list[dict]:
+    """Enumerate cameras using cv2_enumerate_cameras."""
+    from cv2_enumerate_cameras import enumerate_cameras
+    cameras = []
+    for cam in enumerate_cameras():
+        cameras.append({"index": cam.index, "name": cam.name})
+    return cameras
+
+
+def _pick(label: str, items: list[dict], key: str = "index",
+          name_key: str = "name") -> int | None:
+    """Interactive numbered picker. Returns chosen value or None to skip."""
+    if not items:
+        print(f"  No {label} found.")
+        return None
+
+    for i, item in enumerate(items):
+        extra = " | ".join(f"{k}={v}" for k, v in item.items()
+                           if k not in (key, name_key))
+        print(f"  [{i}] {item[name_key]}" + (f"  ({extra})" if extra else ""))
+    print(f"  [s] Skip {label}")
+
+    while True:
+        choice = input(f"  Select {label} [0]: ").strip().lower()
+        if choice == "s":
+            return None
+        if choice == "":
+            return items[0][key]
+        try:
+            idx = int(choice)
+            if 0 <= idx < len(items):
+                return items[idx][key]
+        except ValueError:
+            pass
+        print("  Invalid choice, try again.")
+
+
+def _select_devices(args: argparse.Namespace) -> tuple[int | None, int | None]:
+    """Interactive device selection. Returns (mic_index, camera_index)."""
+    mic_index = None
+    cam_index = None
+
+    if not args.no_audio:
+        print("\nAvailable microphones:")
+        mics = _list_microphones()
+        mic_index = _pick("microphone", mics)
+        if mic_index is None:
+            print("  Audio disabled.")
+
+    if not args.no_video:
+        print("\nAvailable cameras:")
+        cams = _list_cameras()
+        cam_index = _pick("camera", cams)
+        if cam_index is None:
+            print("  Video disabled.")
+
+    print()
+    return mic_index, cam_index
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="attenlabs-sas CLI demo")
-    p.add_argument("--token", required=True, help="SAS auth token")
+    p.add_argument("--token", default=os.environ.get("SAS_TOKEN"),
+                   help="SAS auth token (or set SAS_TOKEN env var)")
     p.add_argument("--url", default=None,
                    help="Override the SAS server URL (default: wss://server.attentionlabs.ai/ws)")
     p.add_argument("--openai-key", default=os.environ.get("OPENAI_API_KEY"),
                    help="OpenAI API key with Realtime access (env: OPENAI_API_KEY)")
-    p.add_argument("--camera-index", type=int, default=0, help="Webcam device index")
+    p.add_argument("--camera-index", type=int, default=None, help="Webcam device index (skip selector)")
     p.add_argument("--mic-device", default=None,
                    help="Mic device name or index (system default if unset)")
     p.add_argument("--threshold", type=float, default=0.7,
@@ -53,21 +131,50 @@ def main() -> int:
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
 
+    # Interactive device selection when flags aren't explicit
     mic_device = args.mic_device
+    cam_index = args.camera_index
+
     if mic_device is not None:
         try:
             mic_device = int(mic_device)
         except ValueError:
             pass  # treat as device name string
 
+    needs_mic_select = mic_device is None and not args.no_audio
+    needs_cam_select = cam_index is None and not args.no_video
+
+    if needs_mic_select or needs_cam_select:
+        sel_mic, sel_cam = _select_devices(args)
+        if needs_mic_select:
+            mic_device = sel_mic
+        if needs_cam_select:
+            cam_index = sel_cam
+
+    enable_audio = not args.no_audio and mic_device is not None
+    enable_video = not args.no_video and cam_index is not None
+
+    if not enable_audio and not enable_video:
+        print("Both audio and video disabled — nothing to stream.")
+        return 1
+
+    # Set sounddevice default input device
+    if enable_audio:
+        sd.default.device[0] = mic_device
+
+    # Token fallback for production server
+    token = args.token
+    if not token:
+        token = "480daed2-8b70-42b1-a1aa-1a7832b42884"
+
     client = AttentionClient(
         url=args.url,
-        token=args.token,
-        video=CameraConfig(device_index=args.camera_index),
+        token=token,
+        video=CameraConfig(device_index=cam_index if cam_index is not None else 0),
         audio=MicConfig(device=mic_device),
         initial_threshold=args.threshold,
-        enable_audio=not args.no_audio,
-        enable_video=not args.no_video,
+        enable_audio=enable_audio,
+        enable_video=enable_video,
     )
 
     use_llm = bool(args.openai_key) and not args.no_llm
