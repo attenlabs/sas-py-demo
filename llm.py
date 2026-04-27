@@ -1,4 +1,4 @@
-"""OpenAI Realtime bridge — sample-only, NOT part of sas-py.
+"""OpenAI Realtime bridge — sample-only, NOT part of attenlabs-sas.
 
 Takes base64 PCM16 audio from `sas.AttentionClient`'s `speech_ready` event,
 forwards it to OpenAI's Realtime API, and plays the response back through the

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI demo for sas-py.
+"""CLI demo for attenlabs-sas.
 
 Streams mic + webcam to the SD Attention Server, forwards detected speech to
 OpenAI Realtime, and plays the response back through the local speaker.
@@ -26,7 +26,7 @@ LLM_INSTRUCTIONS = (
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="sas-py CLI demo")
+    p = argparse.ArgumentParser(description="attenlabs-sas CLI demo")
     p.add_argument("--token", required=True, help="SAS auth token")
     p.add_argument("--url", default=None,
                    help="Override the SAS server URL (default: wss://server.attentionlabs.ai/ws)")

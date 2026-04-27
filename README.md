@@ -1,8 +1,6 @@
-# sas-py-demo
+# attenlabs-sas-demo
 
-End-to-end CLI demo for [SAS](https://server.attentionlabs.ai) — streams microphone and webcam to the SD Attention Server, then forwards detected speech segments to OpenAI Realtime for a conversational audio response.
-
-Everything runs locally in a single Python process. The server tells you *when* someone is speaking and what they said; this demo routes that speech to the LLM of your choice (OpenAI Realtime shown here, but `sas-py` hands you PCM16 audio — drop in any provider).
+End-to-end CLI demo for [Attention Labs](https://attentionlabs.ai) real-time attention detection
 
 ## What you'll need
 
@@ -14,7 +12,7 @@ Everything runs locally in a single Python process. The server tells you *when* 
 ## Install
 
 ```bash
-pip install -r <(echo "sas-py") openai-compatible-realtime  # optional extras
+pip install -r <(echo "attenlabs-sas") openai-compatible-realtime  # optional extras
 # or, using the local pyproject.toml:
 pip install .
 ```
@@ -55,7 +53,7 @@ python main.py --token YOUR_TOKEN
 
 ## How it works
 
-1. [`main.py`](main.py) constructs an `AttentionClient` from [`sas-py`](https://pypi.org/project/sas-py/), which starts mic + webcam capture threads and opens a WebSocket to the SAS server.
+1. [`main.py`](main.py) constructs an `AttentionClient` from [`attenlabs-sas`](https://pypi.org/project/attenlabs-sas/), which starts mic + webcam capture threads and opens a WebSocket to the SAS server.
 2. The SDK emits events — `prediction`, `vad`, `state`, and `speech_ready` — which the CLI prints in real time.
 3. On `speech_ready`, `main.py` hands the PCM16 audio to [`llm.py`](llm.py), a small OpenAI Realtime bridge that sends it to OpenAI and plays the response back through your speaker.
 4. While the LLM is speaking, `main.py` calls `client.mute()` + `client.mark_responding(True)` so the server stops emitting predictions until playback ends.

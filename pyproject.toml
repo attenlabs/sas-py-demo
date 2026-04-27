@@ -3,12 +3,12 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sas-py-demo"
+name = "attenlabs-sas-demo"
 version = "0.1.0"
-description = "CLI demo for sas-py: streams microphone and webcam to the SD Attention Server and routes detected speech through OpenAI Realtime."
+description = "CLI demo for attenlabs-sas: streams microphone and webcam to the SD Attention Server and routes detected speech through OpenAI Realtime."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
 dependencies = [
-    "sas-py>=0.1.0",
+    "attenlabs-sas>=0.1.0",
 ]
