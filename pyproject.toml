@@ -11,6 +11,7 @@ license = "MIT"
 requires-python = ">=3.10"
 dependencies = [
     "attenlabs-sas>=0.1.0",
+    "cv2-enumerate-cameras",
 ]
 
 [tool.setuptools]
