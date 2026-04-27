@@ -4,7 +4,7 @@ End-to-end CLI demo for [Attention Labs](https://attentionlabs.ai) real-time att
 
 ## What you'll need
 
-- A SAS auth token
+- A SAS auth token (sign up on the dashboard [here](https://attentionlabs.ai/dashboard/))
 - Python 3.10+
 - A microphone and webcam
 - An OpenAI API key with Realtime access *(optional — omit to run without the LLM stage and just see live predictions)*
