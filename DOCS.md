@@ -4,7 +4,7 @@ Python SDK for [Attention Labs](https://attentionlabs.ai) real-time selective au
 
 Every voice pipeline has the same problem: the microphone hears everything, but your ASR should only process speech directed at the device. Wake words solve this with a rigid trigger phrase. SAS solves it without one — classifying every audio frame as **silent**, **human-directed**, or **device-directed** and routing only what matters.
 
-`attenlabs-sas` streams mic and webcam data to the SAS inference server over WebSocket and emits typed events: attention predictions, voice activity, conversation state, and ready-to-forward speech audio. LLM routing is left to you.
+`attenlabs-sas`  mic and webcam data is sent to the SAS inference server over WebSocket and emits typed events: attention predictions, voice activity, conversation state, and speech audio. You can adjust when to send to the LLM.
 
 ## Sign up
 
@@ -73,30 +73,30 @@ client = AttentionClient(
 
 #### `MicConfig`
 
-| field      | type                    | default | notes                                      |
-| ---------- | ----------------------- | ------- | ------------------------------------------ |
-| `device`   | `int \| str \| None`   | `None`  | Device index, name, or `None` for system default |
-| `channels` | `int`                   | `1`     | Number of input channels                   |
+| field      | type                    | default | notes                                            |
+| ---------- | ----------------------- | ------- | ------------------------------------------       |
+| `device`   | `int \| str \| None`    | `None`  | Device index, name, or `None` for system default |
+| `channels` | `int`                   | `1`     | Number of input channels                         |
 
 #### `CameraConfig`
 
-| field          | type  | default | notes                         |
-| -------------- | ----- | ------- | ----------------------------- |
-| `device_index` | `int` | `0`     | Webcam device index           |
-| `width`        | `int` | `1920`  | Capture width                 |
-| `height`       | `int` | `1080`  | Capture height                |
+| field          | type  | default | notes                          |
+| -------------- | ----- | ------- | ------------------------------ |
+| `device_index` | `int` | `0`     | Webcam device index            |
+| `width`        | `int` | `1920`  | Capture width                  |
+| `height`       | `int` | `1080`  | Capture height                 |
 | `jpeg_quality` | `int` | `60`    | JPEG compression quality 0–100 |
 
 ### Methods
 
-| method                       | description |
-| ---------------------------- | ----------- |
+| method                       | description                                                                                                |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `start()`                    | Opens WebSocket, acquires mic + camera, starts capture threads. Non-blocking. Raises on handshake failure. |
-| `stop()`                     | Tears down capture, joins threads, closes WebSocket. |
-| `mute()`                     | Pauses upstream audio and signals server to stop VAD. |
-| `unmute()`                   | Resumes upstream audio. |
-| `mark_responding(bool)`      | Tell the server an LLM response is in flight. Server stops emitting predictions while `True`. |
-| `set_threshold(value: float)` | Update device-class confidence threshold (0..1). Server acks via `config` event. |
+| `stop()`                     | Tears down capture, joins threads, closes WebSocket.                                                       | 
+| `mute()`                     | Pauses upstream audio and signals server to stop VAD.                                                      |
+| `unmute()`                   | Resumes upstream audio.                                                                                    |
+| `mark_responding(bool)`      | Tell the server an LLM response is in flight. Server stops emitting predictions while `True`.              |
+| `set_threshold(value: float)`| Update device-class confidence threshold (0..1). Server acks via `config` event.                           |
 
 ### Events
 
@@ -108,19 +108,19 @@ def handle(event):
     ...
 ```
 
-| decorator             | payload                | fires when                              |
-| --------------------- | ---------------------- | --------------------------------------- |
-| `@on_connected`       | —                      | WebSocket opens                         |
-| `@on_started`         | —                      | Server-side warmup complete             |
-| `@on_warmup_complete` | —                      | First non-zero-confidence prediction    |
-| `@on_prediction`      | `PredictionEvent`      | Each attention prediction               |
-| `@on_vad`             | `VadEvent`             | Voice activity update                   |
-| `@on_state`           | `StateEvent`           | Conversation state transition           |
+| decorator             | payload                | fires when                               |
+| --------------------- | ---------------------- | ---------------------------------------- |
+| `@on_connected`       | —                      | WebSocket opens                          |
+| `@on_started`         | —                      | Server-side warmup complete              |
+| `@on_warmup_complete` | —                      | First non-zero-confidence prediction     |
+| `@on_prediction`      | `PredictionEvent`      | Each attention prediction                |
+| `@on_vad`             | `VadEvent`             | Voice activity update                    |
+| `@on_state`           | `StateEvent`           | Conversation state transition            |
 | `@on_speech_ready`    | `SpeechReadyEvent`     | Complete speech segment ready to forward |
-| `@on_config`          | `ConfigEvent`          | Server acks a threshold change          |
-| `@on_stats`           | `StatsEvent`           | Every ~10s with connection health       |
-| `@on_error`           | `AttentionErrorEvent`  | Connection, auth, or server error       |
-| `@on_disconnected`    | `DisconnectedEvent`    | WebSocket closes                        |
+| `@on_config`          | `ConfigEvent`          | Server acks a threshold change           |
+| `@on_stats`           | `StatsEvent`           | Every ~10s with connection health        |
+| `@on_error`           | `AttentionErrorEvent`  | Connection, auth, or server error        |
+| `@on_disconnected`    | `DisconnectedEvent`    | WebSocket closes                         |
 
 ### Event types
 
@@ -220,11 +220,11 @@ See [`main.py`](main.py) in this repo for a full working example with OpenAI Rea
 
 The SDK manages four threads internally:
 
-| thread           | purpose                            |
-| ---------------- | ---------------------------------- |
-| `sas-ws`         | WebSocket send/receive             |
-| `sas-heartbeat`  | JSON pings every 5s, stats every 10s |
-| `sas-camera`     | JPEG capture at 4 fps (250 ms)     |
+| thread           | purpose                                                   |
+| ---------------- | --------------------------------------------------------- |
+| `sas-ws`         | WebSocket send/receive                                    |
+| `sas-heartbeat`  | JSON pings every 5s, stats every 10s                      |
+| `sas-camera`     | JPEG capture at 4 fps (250 ms)                            |
 | *(sounddevice)*  | Audio callback at native sample rate, resampled to 16 kHz |
 
 All event callbacks fire on `sas-ws` or `sas-heartbeat`. Don't block them — offload heavy work to your own thread.
