@@ -100,7 +100,7 @@ client = AttentionClient(
 
 ### Events
 
-Register handlers with decorators. All callbacks fire on internal threads — keep them fast or hand work off to your own thread.
+Register handlers with decorators. All callbacks fire on internal threads.
 
 ```python
 @client.on_prediction
@@ -227,7 +227,7 @@ The SDK manages four threads internally:
 | `sas-camera`     | JPEG capture at 4 fps (250 ms)                            |
 | *(sounddevice)*  | Audio callback at native sample rate, resampled to 16 kHz |
 
-All event callbacks fire on `sas-ws` or `sas-heartbeat`. Don't block them — offload heavy work to your own thread.
+All event callbacks fire on `sas-ws` or `sas-heartbeat`.
 
 ## License
 
