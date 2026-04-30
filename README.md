@@ -1,6 +1,10 @@
 # attenlabs-sas-demo
+Python SDK for [Attention Labs](https://attentionlabs.ai) real-time selective auditory attention.
 
-End-to-end CLI demo for [Attention Labs](https://attentionlabs.ai) real-time attention detection. Captures audio/video, runs attention prediction, and responds via the OpenAI Realtime API.
+Every voice pipeline has the same problem: the microphone hears everything, but your ASR should only process speech directed at the device. Wake words solve this with a rigid trigger phrase. SAS solves it without one.
+
+attenlabs-sas streams mic and webcam data to the SAS inference server over WebSocket and emits typed events: attention predictions, voice activity, conversation state, and ready-to-forward speech audio. LLM routing is left to you. This is a CLI sample app that demonstrates it.
+
 
 [reachy_demo.webm](https://github.com/user-attachments/assets/14c5a350-9059-4ac7-bba9-92dca01feb69)
 
