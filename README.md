@@ -1,6 +1,8 @@
 # attenlabs-sas-demo
 
-End-to-end CLI demo for [Attention Labs](https://attentionlabs.ai) real-time attention detection
+End-to-end CLI demo for [Attention Labs](https://attentionlabs.ai) real-time attention detection. Captures audio/video, runs attention prediction, and responds via the OpenAI Realtime API.
+
+[reachy_demo.webm](https://github.com/user-attachments/assets/14c5a350-9059-4ac7-bba9-92dca01feb69)
 
 ## What you'll need
 
