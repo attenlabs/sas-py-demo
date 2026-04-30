@@ -12,8 +12,8 @@ End-to-end CLI demo for [Attention Labs](https://attentionlabs.ai) real-time att
 ## Install
 
 ```bash
-pip install -r <(echo "attenlabs-sas") openai-compatible-realtime  # optional extras
-# or, using the local pyproject.toml:
+pip install attenlabs-sas cv2-enumerate-cameras
+# or, from a clone of this repo:
 pip install .
 ```
 
