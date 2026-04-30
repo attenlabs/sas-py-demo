@@ -53,6 +53,10 @@ python main.py --token YOUR_TOKEN
 --log-level         DEBUG, INFO, WARNING, ERROR (default WARNING)
 ```
 
+## SDK docs
+
+Full API reference — constructor, methods, events, types, threading model — lives in [**DOCS.md**](DOCS.md).
+
 ## How it works
 
 1. [`main.py`](main.py) constructs an `AttentionClient` from [`attenlabs-sas`](https://pypi.org/project/attenlabs-sas/), which starts mic + webcam capture threads and opens a WebSocket to the SAS server.
