@@ -11,7 +11,6 @@ import argparse
 import collections
 import logging
 import os
-import re
 import shutil
 import sys
 import threading
@@ -34,174 +33,189 @@ LLM_INSTRUCTIONS = (
 # ── Terminal UI ─────────────────────────────────────────────────
 
 
-def _vlen(s: str) -> int:
-    """Visible string length, excluding ANSI escape sequences."""
-    return len(re.sub(r'\033\[[0-9;]*m', '', s))
+READY_BANNER = r"""
+  ╔═══════════════════════════════════════════════════════════╗
+  ║                                                           ║
+  ║   ██████╗ ███████╗ █████╗ ██████╗ ██╗   ██╗██╗            ║
+  ║   ██╔══██╗██╔════╝██╔══██╗██╔══██╗╚██╗ ██╔╝██║            ║
+  ║   ██████╔╝█████╗  ███████║██║  ██║ ╚████╔╝ ██║            ║
+  ║   ██╔══██╗██╔══╝  ██╔══██║██║  ██║  ╚██╔╝  ╚═╝            ║
+  ║   ██║  ██║███████╗██║  ██║██████╔╝   ██║   ██╗            ║
+  ║   ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═════╝    ╚═╝   ╚═╝            ║
+  ║                                                           ║
+  ╚═══════════════════════════════════════════════════════════╝
+"""
+
+
+class _SuppressableStdout:
+    """Thread-safe stdout wrapper. While `suppress` is True, only
+    `direct_write()` reaches the terminal — print() calls from other
+    threads are dropped so they cannot corrupt cursor positioning."""
+
+    def __init__(self, original):
+        self._original = original
+        self._lock = threading.Lock()
+        self.suppress = False
+
+    def write(self, text):
+        if self.suppress:
+            return len(text)
+        with self._lock:
+            return self._original.write(text)
+
+    def flush(self):
+        self._original.flush()
+
+    def direct_write(self, text):
+        with self._lock:
+            self._original.write(text)
+            self._original.flush()
+
+    def fileno(self):
+        return self._original.fileno()
+
+    def isatty(self):
+        return self._original.isatty()
+
+    def __getattr__(self, name):
+        return getattr(self._original, name)
 
 
 class TerminalUI:
-    """Persistent ASCII dashboard for SD Attention predictions.
+    """Bordered in-place status frame for the SAS demo.
 
-    Stays hidden during model warmup. Activates on first real prediction
-    and redraws in-place every update.
+    Renders an N-line status panel with a header and updates each line
+    in place via ANSI cursor positioning. While active, all stray stdout
+    writes from other threads are suppressed so they cannot tear the frame.
     """
 
-    _LABELS = {0: "SILENT", 1: "HUMAN", 2: "DEVICE"}
-    _CLR = {"SILENT": "\033[90m", "HUMAN": "\033[33m", "DEVICE": "\033[36m"}
-    _STATE_CLR = {
-        "IDLE": "\033[90m",
-        "LISTENING": "\033[32m",
-        "SENDING": "\033[33m",
-        "CANCELLED": "\033[31m",
+    APP_NAME = "ATTENTION LABS :: CONVERSATION INTELLIGENCE"
+    APP_VERSION = "1.0"
+
+    _PRED_TEXT = {
+        0: "NOT_TALKING",
+        1: "TALKING TO HUMAN",
+        2: "TALKING TO COMPUTER",
     }
-    _LLM_CLR = {"Idle": "\033[90m", "Processing": "\033[33m", "Speaking": "\033[36m"}
-    RST = "\033[0m"
-    BOLD = "\033[1m"
-    DIM = "\033[2m"
-    BAR_W = 20
-    MAX_HISTORY = 10
-    MAX_LOGS = 5
+    _BUFFER_LEN = 10
 
     def __init__(self):
         self._lock = threading.Lock()
         self._active = False
-        self._history: collections.deque = collections.deque(maxlen=self.MAX_HISTORY)
-        self._current: dict | None = None
-        self._conv_state = "IDLE"
-        self._llm_state = "Idle"
-        self._logs: collections.deque = collections.deque(maxlen=self.MAX_LOGS)
-        self._drawn = 0
+        self._term_cols = 80
+        self._status_start_row = 6
+        self._status_lines: list[str] = []
+
+        self._buffer: collections.deque = collections.deque(maxlen=self._BUFFER_LEN)
+        self._assistant_state = "idle"
+        self._start_time = 0.0
+
+        if not isinstance(sys.stdout, _SuppressableStdout):
+            self._stdout = _SuppressableStdout(sys.stdout)
+            sys.stdout = self._stdout
+        else:
+            self._stdout = sys.stdout
 
     @property
     def active(self) -> bool:
         return self._active
 
-    def activate(self):
+    def show_ready_banner(self):
+        print(READY_BANNER)
+
+    def _bordered(self, text: str) -> str:
+        max_text = self._term_cols - 6
+        t = text[:max_text]
+        return '║  ' + t + ' ' * (max_text - len(t)) + '  ║'
+
+    def _draw_frame(self, num_lines: int):
+        try:
+            self._term_cols = max(shutil.get_terminal_size().columns, 60)
+        except (OSError, ValueError):
+            self._term_cols = 80
+
+        bar = '═' * (self._term_cols - 2)
+        title = f'{self.APP_NAME} v{self.APP_VERSION}'
+
+        lines = [
+            '\033[2J\033[H',
+            f'╔{bar}╗',
+            self._bordered(title),
+            self._bordered('Press Ctrl+C to stop'),
+            f'╠{bar}╣',
+        ]
+        self._status_start_row = len(lines) + 1
+        for _ in range(num_lines):
+            lines.append(self._bordered(''))
+        lines.append(f'╚{bar}╝')
+
+        self._stdout.direct_write('\n'.join(lines))
+
+    def start_status(self, num_lines: int = 4):
         with self._lock:
             if self._active:
                 return
+            self._status_lines = [''] * num_lines
             self._active = True
-            sys.stdout.write("\033[?25l\033[2J\033[H")  # hide cursor, clear, home
-            sys.stdout.flush()
-            self._render()
+            self._stdout.suppress = True
+            self._draw_frame(num_lines)
 
-    def deactivate(self):
+    def end_status(self):
         with self._lock:
             if not self._active:
                 return
             self._active = False
-            sys.stdout.write(f"\033[{self._drawn}B\033[?25h\n")
-            sys.stdout.flush()
+            self._stdout.suppress = False
+            bottom = self._status_start_row + len(self._status_lines) + 2
+            self._stdout.direct_write(f'\033[{bottom};1H\n')
 
-    def update_prediction(self, cls: int, confidence: float | None, faces: int = 0):
-        label = self._LABELS.get(cls, "?")
-        entry = {"label": label, "confidence": confidence, "faces": faces}
+    def update_status(self, line_index: int, message: str):
         with self._lock:
-            self._current = entry
-            self._history.appendleft(entry)
-            if self._active:
-                self._render()
+            if not self._active or not (0 <= line_index < len(self._status_lines)):
+                return
+            self._status_lines[line_index] = message
+            row = self._status_start_row + line_index
+            max_text = self._term_cols - 6
+            t = message[:max_text]
+            content = '  ' + t + ' ' * (max_text - len(t)) + '  '
+            bottom = self._status_start_row + len(self._status_lines) + 1
+            self._stdout.direct_write(f'\033[{row};2H{content}\033[{bottom};1H')
+
+    # ── semantic helpers used by main.py ──
+
+    def activate(self):
+        """Show READY banner then start the bordered status frame."""
+        if self._active:
+            return
+        self.show_ready_banner()
+        self._start_time = time.time()
+        self.start_status(4)
+
+    def deactivate(self):
+        self.end_status()
+
+    def update_prediction(self, cls: int, confidence: float | None):
+        pred_text = self._PRED_TEXT.get(cls, "NOT_TALKING")
+        pct = (confidence or 0) * 100
+        self._buffer.append(cls)
+        self.update_status(0, f"CURRENT MODE : {pred_text} ({pct:.2f}%)")
+        self.update_status(1, f"BUFFER       : {list(self._buffer)}")
+        self.update_status(3, f"PROCESSING   : {time.time() - self._start_time:.1f}s")
 
     def update_conv_state(self, state: str):
-        with self._lock:
-            self._conv_state = state.upper()
-            if self._active:
-                self._render()
+        self._assistant_state = state
+        self.update_status(2, f"LLM STATE    : {self._assistant_state}")
 
     def update_llm_state(self, state: str):
-        with self._lock:
-            self._llm_state = state
-            if self._active:
-                self._render()
+        self._assistant_state = state
+        self.update_status(2, f"LLM STATE    : {self._assistant_state}")
 
     def log(self, msg: str):
-        """Append to the log panel. Falls back to print() before UI is active."""
-        with self._lock:
+        """Pre-activation: print to stdout. Post-activation: silently dropped
+        (the source UI shows no log line)."""
+        if not self._active:
             ts = time.strftime("%H:%M:%S")
-            self._logs.appendleft(f"{ts}  {msg}")
-            if self._active:
-                self._render()
-            else:
-                print(f"[{ts}] {msg}")
-
-    def _bar(self, pct: float) -> str:
-        filled = round(pct / 100 * self.BAR_W)
-        return "█" * filled + "░" * (self.BAR_W - filled)
-
-    def _pad(self, s: str, w: int) -> str:
-        return s + " " * max(0, w - _vlen(s))
-
-    def _center(self, s: str, w: int) -> str:
-        gap = max(0, w - _vlen(s))
-        left = gap // 2
-        return " " * left + s + " " * (gap - left)
-
-    def _row(self, content: str, w: int) -> str:
-        return "│ " + self._pad(content, w - 4) + " │"
-
-    def _sep(self, w: int, l: str = "├", r: str = "┤") -> str:
-        return l + "─" * (w - 2) + r
-
-    def _render(self):
-        cols = shutil.get_terminal_size().columns
-        w = max(min(cols, 60), 54)
-
-        if self._drawn:
-            sys.stdout.write(f"\033[{self._drawn}A\033[G")
-
-        L: list[str] = []
-
-        L.append(self._sep(w, "┌", "┐"))
-        title = f"{self.BOLD}SD Attention · Monitor{self.RST}"
-        L.append("│" + self._center(title, w - 2) + "│")
-
-        L.append(self._sep(w))
-        sc = self._STATE_CLR.get(self._conv_state, "")
-        lc = self._LLM_CLR.get(self._llm_state, "")
-        status = (f"State: {sc}{self._conv_state}{self.RST}"
-                  f"    LLM: {lc}{self._llm_state}{self.RST}")
-        L.append(self._row(status, w))
-
-        L.append(self._sep(w))
-        if self._current:
-            p = self._current
-            lbl = p["label"]
-            c = self._CLR.get(lbl, "")
-            pct = (p["confidence"] or 0) * 100
-            cur = (f"▶ {c}{self.BOLD}{lbl:<7}{self.RST}"
-                   f" {pct:5.1f}%  {self._bar(pct)}"
-                   f"  faces: {p['faces']}")
-            L.append(self._row(cur, w))
-        else:
-            L.append(self._row("▶ Waiting…", w))
-
-        L.append(self._sep(w))
-        L.append(self._row(f"{self.DIM}History{self.RST}", w))
-        for p in self._history:
-            lbl = p["label"]
-            c = self._CLR.get(lbl, "")
-            pct = (p["confidence"] or 0) * 100
-            line = f"  {c}{lbl:<7}{self.RST} {pct:5.1f}%  {self._bar(pct)}"
-            L.append(self._row(line, w))
-        for _ in range(self.MAX_HISTORY - len(self._history)):
-            L.append(self._row("", w))
-
-        L.append(self._sep(w))
-        L.append(self._row(f"{self.DIM}Log{self.RST}", w))
-        logs = list(self._logs)[:self.MAX_LOGS]
-        max_entry_len = w - 8
-        for entry in logs:
-            if len(entry) > max_entry_len:
-                entry = entry[: max_entry_len - 1] + "…"
-            L.append(self._row(f"  {self.DIM}{entry}{self.RST}", w))
-        for _ in range(self.MAX_LOGS - len(logs)):
-            L.append(self._row("", w))
-
-        L.append(self._sep(w, "└", "┘"))
-
-        sys.stdout.write("\n".join(L) + "\n")
-        sys.stdout.flush()
-        self._drawn = len(L)
+            print(f"[{ts}] {msg}")
 
 
 # ── Device selection ────────────────────────────────────────────
@@ -405,7 +419,7 @@ def main() -> int:
             if warmup["count"] == 1 or warmup["count"] % 5 == 0:
                 print(f"  warming up model... ({warmup['count']}/~50)")
             return
-        ui.update_prediction(event.cls, event.confidence, event.num_faces)
+        ui.update_prediction(event.cls, event.confidence)
 
     @client.on_state
     def _(event):
