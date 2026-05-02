@@ -13,6 +13,7 @@ attenlabs-sas streams mic and webcam data to the SAS inference server over WebSo
 - A SAS auth token (sign up on the dashboard [here](https://attentionlabs.ai/dashboard/))
 - Python 3.10+
 - A microphone and webcam
+- Microphone and Webcam permissions on your Terminal (do not SKIP THIS STEP)
 - An OpenAI API key with Realtime access *(optional — omit to run without the LLM stage and just see live predictions)*
 
 ## Install
