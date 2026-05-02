@@ -20,9 +20,8 @@ import websocket
 
 DEFAULT_URL = "wss://api.openai.com/v1/realtime?model=gpt-realtime-2025-08-28"
 DEFAULT_VOICE = "sage"
-OUTPUT_SAMPLE_RATE = 24000  # OpenAI Realtime's output rate
-DEFAULT_GAIN_DB = 6.0
-
+OPENAI_OUTPUT_RATE = 24000   # OpenAI Realtime emits at 24 kHz
+PLAYBACK_RATE = 16000
 logger = logging.getLogger("sas_demo.llm")
 
 
@@ -34,7 +33,6 @@ class RealtimeLLMBridge:
         url: str = DEFAULT_URL,
         voice: str = DEFAULT_VOICE,
         instructions: str = "You are a helpful assistant.",
-        gain_db: float = DEFAULT_GAIN_DB,
         temperature: float = 0.8,
         output_device: Optional[int] = None,
     ):
@@ -44,7 +42,6 @@ class RealtimeLLMBridge:
         self.url = url
         self.voice = voice
         self.instructions = instructions
-        self.gain_db = gain_db
         self.temperature = temperature
         self.output_device = output_device
 
@@ -187,8 +184,13 @@ class RealtimeLLMBridge:
             self._emit("speaking_end")
             return
 
-        gain = 10 ** (self.gain_db / 20.0)
-        out = np.clip(pcm16.astype(np.float32) * gain, -32768, 32767).astype(np.int16)
+        
+        # Resample 24 kHz → 16 kHz
+        duration = pcm16.size / OPENAI_OUTPUT_RATE
+        target_len = int(duration * PLAYBACK_RATE)
+        src_idx = np.linspace(0, pcm16.size - 1, num=pcm16.size)
+        tgt_idx = np.linspace(0, pcm16.size - 1, num=target_len)
+        out = np.interp(tgt_idx, src_idx, pcm16.astype(np.float32)).astype(np.int16)
 
         if self.response_timer is not None:
             dt = time.monotonic() - self.response_timer
@@ -198,7 +200,11 @@ class RealtimeLLMBridge:
 
         def play():
             try:
-                sd.play(out, samplerate=OUTPUT_SAMPLE_RATE, device=self.output_device)
+                sd.play(
+                    out,
+                    samplerate=PLAYBACK_RATE,
+                    device=self.output_device,
+                )
                 sd.wait()
             except Exception:
                 logger.exception("llm playback error")
